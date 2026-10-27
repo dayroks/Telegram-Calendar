@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Розумний Календар</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Підключаємо наш файл стилів -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="header">
+        <div class="month-year" id="monthYear">Завантаження...</div>
+        <div class="nav-buttons">
+            <button id="prevBtn">‹</button>
+            <button id="nextBtn">›</button>
+        </div>
+    </div>
+
+    <div class="weekdays">
+        <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Нд</div>
+    </div>
+
+    <div class="days-grid" id="daysGrid"></div>
+
+    <div class="events-section">
+        <div class="events-date" id="eventsDate">Оберіть день</div>
+        <div id="eventsList"></div>
+        
+        <button class="action-btn" id="addSingleBtn">+ Додати на цей день</button>
+        <button class="action-btn outline" id="addRecurringBtn">🔄 Створити циклічний розклад</button>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО -->
+    <div class="modal" id="eventModal">
+        <div class="modal-content">
+            <h3 id="modalTitle" style="margin-top:0;">Нова подія</h3>
+            
+            <input type="text" id="eventText" placeholder="Назва (напр. Спортзал)">
+            <input type="time" id="eventTime" value="12:00">
+            
+            <div id="recurringOptions" class="hidden">
+                <p style="font-size:12px; color:var(--hint-color); margin:0 0 5px 0;">Оберіть дні тижня:</p>
+                <div class="weekday-selector">
+                    <button class="wd-btn" data-day="1">Пн</button>
+                    <button class="wd-btn" data-day="2">Вт</button>
+                    <button class="wd-btn" data-day="3">Ср</button>
+                    <button class="wd-btn" data-day="4">Чт</button>
+                    <button class="wd-btn" data-day="5">Пт</button>
+                    <button class="wd-btn" data-day="6">Сб</button>
+                    <button class="wd-btn" data-day="0">Нд</button>
+                </div>
+            </div>
+
+            <button class="action-btn" id="saveEventBtn">Зберегти</button>
+            <button class="action-btn outline" id="cancelEventBtn" style="margin-top:8px;">Скасувати</button>
+        </div>
+    </div>
+
+    <!-- Підключаємо наш скрипт -->
+    <script src="script.js"></script>
+</body>
+</html>
