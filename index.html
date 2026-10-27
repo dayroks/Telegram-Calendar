@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Розумний Календар</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #ffffff);
+            --text-color: var(--tg-theme-text-color, #000000);
+            --hint-color: var(--tg-theme-hint-color, #999999);
+            --button-color: var(--tg-theme-button-color, #2481cc);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            --danger-color: #ef4444;
+        }
+
+        body {
+            margin: 0;
+            padding: 15px;
+            box-sizing: border-box;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- АНІМАЦІЇ --- */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUpModal { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1.05); } }
+
+        /* --- ШАПКА --- */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; animation: fadeIn 0.3s ease-out; }
+        .month-year { font-size: 22px; font-weight: 800; }
+        .nav-buttons button { background: var(--secondary-bg); border: none; color: var(--text-color); font-size: 18px; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+        .nav-buttons button:active { transform: scale(0.85); }
+
+        /* --- СІТКА КАЛЕНДАРЯ --- */
+        .calendar-wrapper {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-weight: 600; color: var(--hint-color); margin-bottom: 5px; font-size: 12px; }
+
+        .days-grid { 
+            display: grid; 
+            grid-template-columns: repeat(7, 1fr); 
+            gap: 4px; 
+            flex-grow: 1; 
+            grid-auto-rows: 1fr;
+        }
+
+        .day {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 15px; font-weight: 500; border-radius: 10px; cursor: pointer; position: relative;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .day:active:not(.empty) { transform: scale(0.85); }
+        .day.empty { cursor: default; }
+        .day.today { color: var(--button-color); font-weight: 900; border: 1.5px solid var(--button-color); }
+        .day.selected { background-color: var(--button-color); color: white; animation: pop 0.3s forwards; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2;}
+
+        .dots-container { display: flex; gap: 3px; margin-top: 3px; height: 4px; }
+        .dot { width: 4px; height: 4px; border-radius: 50%; background-color: var(--hint-color); }
+        .dot.regular { background-color: var(--button-color); }
+        .dot.recurring { background-color: #fbbf24; }
+        .day.selected .dot { background-color: white; }
+
+        /* --- БЛОК ПОДІЙ --- */
+        .events-section { 
+            margin-top: 15px; 
+            background: var(--secondary-bg); 
+            border-radius: 15px; 
+            padding: 15px; 
+            max-height: 40vh;
+            overflow-y: auto;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .events-date { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+        .event-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 14px; }
+        .event-content { display: flex; align-items: center; gap: 8px; }
+        .event-time { font-weight: 700; color: var(--button-color); min-width: 40px; }
+        .event-recurring-badge { font-size: 10px; background: #fbbf24; color: #000; padding: 2px 5px; border-radius: 5px; font-weight: bold; }
+        .delete-btn { background: transparent; border: none; color: var(--danger-color); font-size: 18px; cursor: pointer; padding: 5px; transition: transform 0.1s; }
+        .delete-btn:active { transform: scale(0.8); }
+
+        /* --- КНОПКИ --- */
+        .action-btn { width: 100%; padding: 12px; background: var(--button-color); color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; margin-top: 10px; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+        .action-btn:active { transform: scale(0.95); opacity: 0.8; }
+        .action-btn.outline { background: transparent; color: var(--button-color); border: 1.5px solid var(--button-color); }
+
+        /* --- МОДАЛЬНІ ВІКНА --- */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; align-items: flex-end; justify-content: center; z-index: 1000; }
+        .modal.active { display: flex; animation: fadeIn 0.2s forwards; }
+
+        .modal-content { 
+            background: var(--bg-color); 
+            width: 100%; 
+            max-width: 100%; 
+            border-radius: 20px 20px 0 0;
+            padding: 20px 20px 30px 20px; 
+            box-shadow: 0 -10px 25px rgba(0,0,0,0.2); 
+            animation: slideUpModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+            box-sizing: border-box;
+        }
+        .modal input { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--hint-color); background: var(--secondary-bg); color: var(--text-color); box-sizing: border-box; font-size: 15px; }
+
+        /* --- ВКЛАДКИ ДНІВ --- */
+        .weekday-selector { display: flex; justify-content: space-between; margin-bottom: 15px; }
+        .wd-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--hint-color); background: transparent; color: var(--text-color); font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        .wd-btn:active { transform: scale(0.9); }
+        .wd-btn.active, .wd-btn.selected { background: var(--button-color); color: white; border-color: var(--button-color); }
+
+        /* --- СПИСОК ЦИКЛІВ --- */
+        .cycle-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--secondary-bg); border-radius: 10px; margin-bottom: 8px; font-weight: 600; }
+        .cycle-actions button { background: none; border: none; font-size: 16px; cursor: pointer; padding: 5px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="month-year" id="monthYear">Завантаження...</div>
+        <div class="nav-buttons">
+            <button id="prevBtn">‹</button>
+            <button id="nextBtn">›</button>
+        </div>
+    </div>
+
+    <div class="calendar-wrapper">
+        <div class="weekdays">
+            <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Нд</div>
+        </div>
+        <div class="days-grid" id="daysGrid"></div>
+    </div>
+
+    <div class="events-section">
+        <div class="events-date" id="eventsDate">Оберіть день</div>
+        <div id="eventsList"></div>
+        
+        <button class="action-btn" id="addSingleBtn">+ Додати на цей день</button>
+        <button class="action-btn outline" id="openManageCyclesBtn">📂 Мої циклічні розклади</button>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО: Додавання звичайної події -->
+    <div class="modal" id="singleEventModal">
+        <div class="modal-content">
+            <h3 id="modalTitle" style="margin-top:0;">Нова подія</h3>
+            <input type="text" id="eventText" placeholder="Назва (напр. Зустріч)">
+            <input type="time" id="eventTime" value="12:00">
+            <button class="action-btn" id="saveSingleEventBtn">Зберегти</button>
+            <button class="action-btn outline" id="cancelSingleEventBtn" style="margin-top:8px;">Скасувати</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО: Список циклів -->
+    <div class="modal" id="manageCyclesModal">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">Мої розклади</h3>
+            <div id="cyclesList" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;"></div>
+            <button class="action-btn" id="createNewCycleBtn">+ Створити новий</button>
+            <button class="action-btn outline" id="closeManageCyclesBtn" style="margin-top:8px;">Закрити</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО: Редактор циклу -->
+    <div class="modal" id="cycleEditorModal">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <h3 id="cycleEditorTitle" style="margin-top:0;">Новий розклад</h3>
+            <input type="text" id="cycleNameInput" placeholder="Назва (напр. Школа)">
+            
+            <div class="weekday-selector" id="cycleDaysTabs">
+                <button class="wd-btn active" data-day="1">Пн</button>
+                <button class="wd-btn" data-day="2">Вт</button>
+                <button class="wd-btn" data-day="3">Ср</button>
+                <button class="wd-btn" data-day="4">Чт</button>
+                <button class="wd-btn" data-day="5">Пт</button>
+                <button class="wd-btn" data-day="6">Сб</button>
+                <button class="wd-btn" data-day="0">Нд</button>
+            </div>
+
+            <div id="dayEventsEditor" style="background: var(--secondary-bg); padding: 10px; border-radius: 10px; margin-bottom: 15px; min-height: 80px;">
+            </div>
+
+            <button class="action-btn outline" id="addEventToCycleBtn" style="margin-bottom: 15px;">+ Додати предмет/справу</button>
+            <button class="action-btn" id="saveCycleBtn">Зберегти розклад</button>
+            <button class="action-btn outline" id="cancelCycleBtn" style="margin-top:8px;">Скасувати</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО: Додавання події в цикл -->
+    <div class="modal" id="addCycleEventModal">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">Додати в розклад</h3>
+            <input type="text" id="cycleEventText" placeholder="Назва (напр. Математика)">
+            <input type="time" id="cycleEventTime" value="08:30">
+            <button class="action-btn" id="saveCycleEventBtn">Додати</button>
+            <button class="action-btn outline" id="cancelCycleEventBtn" style="margin-top:8px;">Скасувати</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО: Підтвердження -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content" style="text-align: center;">
+            <h3 id="confirmTitle" style="margin-top:0;">Видалити?</h3>
+            <p id="confirmText" style="color: var(--hint-color); font-size: 14px; margin-bottom: 20px;">Цю дію неможливо скасувати.</p>
+            <button class="action-btn" style="background: var(--danger-color);" id="confirmYesBtn">Видалити</button>
+            <button class="action-btn outline" id="confirmNoBtn" style="margin-top:8px;">Скасувати</button>
+        </div>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        let currentDate = new Date();
+        let selectedDate = new Date(); 
+
+        let singleEvents = JSON.parse(localStorage.getItem('singleEvents')) || {}; 
+        let cycles = JSON.parse(localStorage.getItem('cycles')) || []; 
+        let activeCycleId = localStorage.getItem('activeCycleId') || null;
+
+        const monthNames = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"];
+        const daysGrid = document.getElementById('daysGrid');
+        const monthYearLabel = document.getElementById('monthYear');
+
+        function saveData() {
+            localStorage.setItem('singleEvents', JSON.stringify(singleEvents));
+            localStorage.setItem('cycles', JSON.stringify(cycles));
+            localStorage.setItem('activeCycleId', activeCycleId);
+        }
+
+        function getDateString(date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+
+        function getEventsForDay(date) {
+            const dateStr = getDateString(date);
+            const dayOfWeek = date.getDay(); 
+            let dayEvents = [];
+            
+            if (singleEvents[dateStr]) {
+                dayEvents = singleEvents[dateStr].map(e => ({...e, isRecurring: false, originalDate: dateStr}));
+            }
+            
+            const activeCycle = cycles.find(c => c.id === activeCycleId);
+            if (activeCycle && activeCycle.schedule[dayOfWeek]) {
+                activeCycle.schedule[dayOfWeek].forEach(ev => {
+                    dayEvents.push({ time: ev.time, text: ev.text, isRecurring: true, cycleName: activeCycle.name });
+                });
+            }
+            
+            return dayEvents.sort((a, b) => a.time.localeCompare(b.time));
+        }
+
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            monthYearLabel.innerText = `${monthNames[month]} ${year}`;
+            daysGrid.innerHTML = '';
+
+            let firstDay = new Date(year, month, 1).getDay();
+            firstDay = firstDay === 0 ? 6 : firstDay - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDay; i++) {
+                daysGrid.innerHTML += `<div class="day empty"></div>`;
+            }
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dateObj = new Date(year, month, i);
+                const dateStr = getDateString(dateObj);
+                
+                let classes = 'day';
+                if (dateStr === getDateString(new Date())) classes += ' today';
+                if (dateStr === getDateString(selectedDate)) classes += ' selected';
+
+                const dayEvents = getEventsForDay(dateObj);
+                
+                let dotsHtml = '<div class="dots-container">';
+                let hasSingle = dayEvents.some(e => !e.isRecurring);
+                let hasRecurring = dayEvents.some(e => e.isRecurring);
+                
+                if (hasSingle) dotsHtml += '<div class="dot regular"></div>';
+                if (hasRecurring) dotsHtml += '<div class="dot recurring"></div>';
+                dotsHtml += '</div>';
+
+                const dayDiv = document.createElement('div');
+                dayDiv.className = classes;
+                dayDiv.innerHTML = `<span>${i}</span>${dayEvents.length > 0 ? dotsHtml : ''}`;
+                
+                dayDiv.onclick = () => {
+                    selectedDate = dateObj;
+                    if(tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+                    renderCalendar();
+                    renderEvents();
+                };
+                daysGrid.appendChild(dayDiv);
+            }
+        }
+
+        function renderEvents() {
+            const dateStr = getDateString(selectedDate);
+            const day = selectedDate.getDate();
+            const month = monthNames[selectedDate.getMonth()];
+            document.getElementById('eventsDate').innerText = `${day} ${month}`;
+
+            const eventsList = document.getElementById('eventsList');
+            const dayEvents = getEventsForDay(selectedDate);
+
+            eventsList.innerHTML = '';
+            if (dayEvents.length === 0) {
+                eventsList.innerHTML = '<div style="color: var(--hint-color); text-align: center; padding: 10px; font-size:14px;">Немає подій</div>';
+            } else {
+                dayEvents.forEach((event, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'event-item';
+                    const deleteBtn = !event.isRecurring ? `<button class="delete-btn" onclick="askDeleteEvent('${dateStr}', ${index})">✕</button>` : '';
+                    
+                    item.innerHTML = `
+                        <div class="event-content">
+                            <span class="event-time">${event.time}</span>
+                            <span>${event.text} ${event.isRecurring ? `<span class="event-recurring-badge" title="${event.cycleName}">цикл</span>` : ''}</span>
+                        </div>
+                        ${deleteBtn}
+                    `;
+                    eventsList.appendChild(item);
+                });
+            }
+        }
+
+        function vibrate(type = 'light') {
+            if(tg.HapticFeedback) {
+                if(type === 'light') tg.HapticFeedback.impactOccurred('light');
+                if(type === 'success') tg.HapticFeedback.notificationOccurred('success');
+                if(type === 'error') tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        const confirmModal = document.getElementById('confirmModal');
+        let confirmAction = null;
+
+        function showConfirm(title, text, onYes) {
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmText').innerText = text;
+            confirmAction = onYes;
+            confirmModal.classList.add('active');
+            vibrate('light');
+        }
+
+        document.getElementById('confirmYesBtn').onclick = () => {
+            vibrate('error');
+            if (confirmAction) confirmAction();
+            confirmModal.classList.remove('active');
+        };
+        document.getElementById('confirmNoBtn').onclick = () => {
+            vibrate('light');
+            confirmModal.classList.remove('active');
+        };
+
+        window.askDeleteEvent = function(dateStr, index) {
+            showConfirm("Видалити подію?", "Вона зникне з календаря.", () => {
+                singleEvents[dateStr].splice(index, 1);
+                if (singleEvents[dateStr].length === 0) delete singleEvents[dateStr];
+                saveData(); renderCalendar(); renderEvents();
+            });
+        };
+
+        const singleEventModal = document.getElementById('singleEventModal');
+        document.getElementById('addSingleBtn').onclick = () => {
+            vibrate('light');
+            document.getElementById('modalTitle').innerText = "Подія на " + selectedDate.getDate() + " число";
+            document.getElementById('eventText').value = '';
+            singleEventModal.classList.add('active');
+        };
+        document.getElementById('cancelSingleEventBtn').onclick = () => {
+            vibrate('light');
+            singleEventModal.classList.remove('active');
+        };
+        document.getElementById('saveSingleEventBtn').onclick = () => {
+            const text = document.getElementById('eventText').value.trim();
+            const time = document.getElementById('eventTime').value;
+            if (!text) {
+                vibrate('error');
+                return alert("Введіть назву!");
+            }
+            const dateStr = getDateString(selectedDate);
+            if (!singleEvents[dateStr]) singleEvents[dateStr] = [];
+            singleEvents[dateStr].push({ text, time });
+            vibrate('success');
+            saveData(); singleEventModal.classList.remove('active'); renderCalendar(); renderEvents();
+        };
+
+        const manageCyclesModal = document.getElementById('manageCyclesModal');
+        const cycleEditorModal = document.getElementById('cycleEditorModal');
+        const cyclesListDiv = document.getElementById('cyclesList');
+
+        document.getElementById('openManageCyclesBtn').onclick = () => { 
+            vibrate('light');
+            renderCyclesList(); manageCyclesModal.classList.add('active'); 
+        };
+        document.getElementById('closeManageCyclesBtn').onclick = () => {
+            vibrate('light');
+            manageCyclesModal.classList.remove('active');
+        };
+
+        function renderCyclesList() {
+            cyclesListDiv.innerHTML = '';
+            if (cycles.length === 0) {
+                cyclesListDiv.innerHTML = '<div style="color: var(--hint-color); text-align:center; font-size:14px; padding:10px;">У вас ще немає розкладів</div>';
+            }
+            cycles.forEach(cycle => {
+                const isActive = cycle.id === activeCycleId;
+                const div = document.createElement('div');
+                div.className = 'cycle-item';
+                div.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="radio" name="activeCycle" ${isActive ? 'checked' : ''} onchange="setActiveCycle('${cycle.id}')">
+                        <span>${cycle.name}</span>
+                    </div>
+                    <div class="cycle-actions">
+                        <button onclick="editCycle('${cycle.id}')">✏️</button>
+                        <button onclick="askDeleteCycle('${cycle.id}')">🗑️</button>
+                    </div>
+                `;
+                cyclesListDiv.appendChild(div);
+            });
+        }
+
+        window.setActiveCycle = function(id) {
+            vibrate('success');
+            activeCycleId = id;
+            saveData(); renderCalendar(); renderEvents();
+        };
+
+        window.askDeleteCycle = function(id) {
+            vibrate('light');
+            showConfirm("Видалити розклад?", "Всі події з цього циклу зникнуть з календаря.", () => {
+                cycles = cycles.filter(c => c.id !== id);
+                if (activeCycleId === id) activeCycleId = null;
+                saveData(); renderCyclesList(); renderCalendar(); renderEvents();
+            });
+        };
+
+        let editingCycle = null;
+        let currentEditorDay = 1;
+
+        document.getElementById('createNewCycleBtn').onclick = () => {
+            vibrate('light');
+            editingCycle = { id: Date.now().toString(), name: '', schedule: {0:[],1:[],2:[],3:[],4:[],5:[],6:[]} };
+            openCycleEditor();
+        };
+
+        window.editCycle = function(id) {
+            vibrate('light');
+            editingCycle = JSON.parse(JSON.stringify(cycles.find(c => c.id === id))); 
+            openCycleEditor();
+        };
+
+        function openCycleEditor() {
+            manageCyclesModal.classList.remove('active');
+            cycleEditorModal.classList.add('active');
+            document.getElementById('cycleNameInput').value = editingCycle.name;
+            document.getElementById('cycleEditorTitle').innerText = editingCycle.name ? 'Редагування: ' + editingCycle.name : 'Новий розклад';
+            currentEditorDay = 1; 
+            updateEditorTabs();
+            renderEditorEvents();
+        }
+
+        function updateEditorTabs() {
+            document.querySelectorAll('#cycleDaysTabs .wd-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.day) === currentEditorDay);
+            });
+        }
+
+        document.querySelectorAll('#cycleDaysTabs .wd-btn').forEach(btn => {
+            btn.onclick = () => {
+                vibrate('light');
+                currentEditorDay = parseInt(btn.dataset.day);
+                updateEditorTabs();
+                renderEditorEvents();
+            };
+        });
+
+        function renderEditorEvents() {
+            const container = document.getElementById('dayEventsEditor');
+            container.innerHTML = '';
+            const dayEvents = editingCycle.schedule[currentEditorDay] || [];
+            
+            if (dayEvents.length === 0) {
+                container.innerHTML = '<div style="color:var(--hint-color); font-size:12px; text-align:center; padding-top:20px;">Немає подій</div>';
+            }
+
+            dayEvents.forEach((ev, index) => {
+                const div = document.createElement('div');
+                div.className = 'event-item';
+                div.innerHTML = `
+                    <div class="event-content">
+                        <span class="event-time">${ev.time}</span>
+                        <span>${ev.text}</span>
+                    </div>
+                    <button class="delete-btn" onclick="removeEditorEvent(${index})">✕</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        window.removeEditorEvent = function(index) {
+            vibrate('error');
+            editingCycle.schedule[currentEditorDay].splice(index, 1);
+            renderEditorEvents();
+        };
+
+        const addCycleEventModal = document.getElementById('addCycleEventModal');
+
+        document.getElementById('addEventToCycleBtn').onclick = () => {
+            vibrate('light');
+            document.getElementById('cycleEventText').value = '';
+            addCycleEventModal.classList.add('active');
+        };
+
+        document.getElementById('cancelCycleEventBtn').onclick = () => {
+            vibrate('light');
+            addCycleEventModal.classList.remove('active');
+        };
+
+        document.getElementById('saveCycleEventBtn').onclick = () => {
+            const text = document.getElementById('cycleEventText').value.trim();
+            const time = document.getElementById('cycleEventTime').value;
+            if (!text) {
+                vibrate('error');
+                return alert("Введіть назву події!");
+            }
+            
+            if (!editingCycle.schedule[currentEditorDay]) editingCycle.schedule[currentEditorDay] = [];
+            editingCycle.schedule[currentEditorDay].push({ time, text });
+            
+            vibrate('success');
+            addCycleEventModal.classList.remove('active');
+            renderEditorEvents();
+        };
+
+        document.getElementById('cancelCycleBtn').onclick = () => {
+            vibrate('light');
+            cycleEditorModal.classList.remove('active');
+            manageCyclesModal.classList.add('active');
+        };
+
+        document.getElementById('saveCycleBtn').onclick = () => {
+            const name = document.getElementById('cycleNameInput').value.trim();
+            if (!name) {
+                vibrate('error');
+                return alert("Введіть назву розкладу!");
+            }
+            
+            editingCycle.name = name;
+            
+            const existingIndex = cycles.findIndex(c => c.id === editingCycle.id);
+            if (existingIndex !== -1) {
+                cycles[existingIndex] = editingCycle; 
+            } else {
+                cycles.push(editingCycle); 
+                if (!activeCycleId) activeCycleId = editingCycle.id; 
+            }
+            
+            vibrate('success');
+            saveData();
+            cycleEditorModal.classList.remove('active');
+            manageCyclesModal.classList.add('active');
+            renderCyclesList();
+            renderCalendar();
+            renderEvents();
+        };
+
+        document.getElementById('prevBtn').onclick = () => {
+            vibrate('light');
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        };
+        document.getElementById('nextBtn').onclick = () => {
+            vibrate('light');
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        };
+
+        renderCalendar();
+        renderEvents();
+    </script>
+</body>
+</html>
